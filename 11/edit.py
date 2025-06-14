@@ -209,6 +209,10 @@ class MetalRenderer:
         }
         """
 
+        print("=== Metal Shader Source ===")
+        print(shader_source)
+        print("==========================")
+
         # Write and compile the Metal shader
         with NamedTemporaryFile(delete=False, suffix=".metal") as metal_file:
             metal_file.write(shader_source.encode("utf-8"))
@@ -218,8 +222,27 @@ class MetalRenderer:
         metallib_path = metal_file_path.with_suffix(".metallib")
 
         # Compile to .air and then .metallib
-        subprocess.run(["xcrun", "-sdk", "macosx", "metal", str(metal_file_path), "-o", str(air_path)], check=True)
-        subprocess.run(["xcrun", "metallib", str(air_path), "-o", str(metallib_path)], check=True)
+        try:
+            result_metal = subprocess.run(
+                ["xcrun", "-sdk", "macosx", "metal", str(metal_file_path), "-o", str(air_path)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Metal compiler error:\n{e.stderr.decode()}\n{e.stdout.decode()}")
+            raise
+
+        try:
+            result_metallib = subprocess.run(
+                ["xcrun", "metallib", str(air_path), "-o", str(metallib_path)],
+                check=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Metallib linker error:\n{e.stderr.decode()}\n{e.stdout.decode()}")
+            raise
 
         data = NSData.dataWithContentsOfFile_(str(metallib_path))
         self.library = self.device.newLibraryWithData_error_(data, None)
@@ -252,7 +275,7 @@ class AudioEffectEngine:
     Engine that handles numpy <-> Metal buffer conversion and audio processing pipeline.
     """
     def __init__(self):
-        self.renderer = MetalRenderer.alloc().init()
+        self.renderer = MetalRenderer()
         self.renderer.initMetal()
 
     def apply(self, np_data: np.ndarray, params: EffectParams) -> np.ndarray:
